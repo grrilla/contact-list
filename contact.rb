@@ -1,4 +1,5 @@
-require 'csv'
+require 'pg'
+require 'pry'
 
 # Represents a person in an address book.
 # The ContactList class will work with Contact objects instead of interacting with the CSV file directly
@@ -7,8 +8,12 @@ class Contact
   class ContactNotFoundError < StandardError
   end
 
-  attr_reader :name, :email
-  attr_accessor :id
+  TABLE = 'contacts'
+
+  @@conn = PG::Connection.open(dbname: 'contacts')
+
+  attr_reader :id
+  attr_accessor :name, :email
 
   # Creates a new contact object
   # @param name [String] The contact's name
@@ -20,46 +25,52 @@ class Contact
   end
 
   def to_s
-    @id.nil? ? "#{@name} (#{@email})" : "#{@id}: #{@name} (#{@email})"
+    @id.nil? ? "#{name} (#{email})" : "#{id}: #{name} (#{email})"
+  end
+
+  def save
+    if saved?
+      @@conn.exec("UPDATE #{TABLE} SET name='#{name}', email='#{email}' WHERE id=#{id}::int")
+    else
+      @id = @@conn.exec_params("INSERT INTO #{TABLE} (name, email) VALUES ($1, $2) \
+                                RETURNING id;", [name, email])
+    end
+    self
+  end
+
+  def destroy
+    @@conn.exec_params("DELETE FROM #{TABLE} WHERE id=$1::int;", [id])
+  end
+
+  def saved?
+    !!@id
   end
 
   # Provides functionality for managing contacts in the csv file.
   class << self
 
-    # Opens 'contacts.csv' and creates a Contact object for each line in the file (aka each contact).
+    # select all the contacts from the database using the connection and continue to return
+    # an Array of Contact objects
     # @return [Array<Contact>] Array of Contact objects
     def all
-      all_contacts = Array.new
-      CSV.read('contacts.csv').each do |contact|
-        all_contacts << Contact.new(contact[1],contact[2],contact[0])
-      end
-      all_contacts
+      @@conn.exec("SELECT * FROM #{TABLE} ORDER BY id;").map { |contact| instance_from_row(contact) }
     end
 
-    # Creates a new contact, adding it to the csv file, returning the new contact.
+    # Creates a new contact, adding it to the database, returning the new contact.
     # @param name [String] the new contact's name
     # @param email [String] the contact's email
     def create(name, email)
-      highest_id = 0
-      Contact.all.each do |contact|
-        if contact.id.to_i > highest_id
-          highest_id = contact.id.to_i
-        end
-      end
-      new_contact = Contact.new(name,email,highest_id + 1)
-      contact_file = CSV.open('contacts.csv', 'a')
-      contact_file << [new_contact.id.to_s, new_contact.name, new_contact.email]
-      new_contact
+      Contact.new(name,email).save
     end
 
-    # Find the Contact in the 'contacts.csv' file with the matching id.
+    # Find the Contact in the database with the matching id.
     # @param id [Integer] the contact id
-    # @return [Contact, nil] the contact with the specified id. If no contact has the id, returns nil.
+    # @return [Contact, nil] the contact with the specified id
     def find(id)
       raise ArgumentError, "You must enter a valid ID." if id.nil?
-      contact = Contact.all.find { |contact| contact.id == id }
-      raise ContactNotFoundError, "No contact with ID #{id} found." if contact.nil?
-      contact
+      result = @@conn.exec_params("SELECT * FROM #{TABLE} WHERE id=$1::int;", [id])
+      raise ContactNotFoundError, "No contact with ID #{id} found." if result.values.empty?
+      instance_from_row(result.first)
     end
 
     # Search for contacts by either name or email.
@@ -73,5 +84,12 @@ class Contact
       raise ContactNotFoundError, "No record containing expression \"#{term}\" found." if matches.empty?
       matches
     end
+
+    private
+
+    def instance_from_row(result)
+      Contact.new(result['name'], result['email'], result['id'])
+    end
+
   end
 end

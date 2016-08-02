@@ -45,6 +45,27 @@ class ContactList
           puts "#{e.class}: #{e.message}\n\n"
         end
 
+      when "update" then
+        begin
+          contact = Contact.find(ARGV[1])
+          puts "\nEditing --> #{contact.to_s}\n\n"
+          print "\nEnter contact's updated name: "
+          contact.name = STDIN.gets.chomp
+          print "Enter contact's updated email: "
+          contact.email = STDIN.gets.chomp
+          contact.save
+        rescue => e
+          puts "#{e.class}: #{e.message}\n\n"
+        end
+
+      when "destroy" then
+        begin
+          Contact.find(ARGV[1]).destroy
+          puts "Contact at ID #{ARGV[1]} removed from database."
+        rescue => e
+          puts "#{e.class}: #{e.message}\n\n"
+        end
+
     end
   else
   	puts "\nHere is a list of available commands:"
