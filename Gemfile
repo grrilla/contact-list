@@ -1,5 +1,5 @@
-source 'https://rubygems.org'
+source "https://rubygems.org"
 
 gem 'pry'
-gem 'byebug'
 gem 'pg'
+gem 'activerecord'
